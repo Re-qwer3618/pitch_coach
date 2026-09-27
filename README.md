@@ -66,8 +66,15 @@ flutter build apk --release
 > - `permission_handler`는 `12.0.1`로 고정되어 있습니다. 13.x(android 14.x)는 compileSdk 37을 요구하는데,
 >   Flutter 3.47의 AGP 9.1이 `android-37.0`으로 배포된 SDK Platform 37을 인식하지 못해 빌드가 깨집니다.
 >
-> 현재 릴리스 빌드는 Flutter 기본 설정대로 **debug 키로 서명**됩니다. 개인 설치용으로는 충분하지만,
-> Play 스토어 배포 시에는 업로드 키를 만들어 `android/app/build.gradle.kts`의 `signingConfig`를 교체해야 합니다.
+> `android/key.properties`(업로드 키)가 있으면 릴리스 빌드가 그 키로 서명되고, 없으면 debug 키로 서명됩니다(개인 설치용).
+
+## Google Play 스토어 출시
+[docs/play-store-guide.md](docs/play-store-guide.md)에 전체 절차가 있습니다.
+```
+powershell -ExecutionPolicy Bypass -File tools\create_upload_key.ps1   # 업로드 키 생성 (처음 한 번)
+powershell -ExecutionPolicy Bypass -File tools\build_release.ps1       # 서명된 AAB 빌드
+```
+개인정보처리방침: [docs/privacy-policy.md](docs/privacy-policy.md) · 스토어 그래픽: `store/`
 
 ### iOS
 `Info.plist`에 `NSMicrophoneUsageDescription`이 들어 있습니다. macOS에서 빌드할 때 `ios/Podfile`의
