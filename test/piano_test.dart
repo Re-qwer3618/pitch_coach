@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitch_coach/models/note.dart';
-import 'package:pitch_coach/models/song.dart';
+import 'package:pitch_coach/data/built_in_songs.dart';
 import 'package:pitch_coach/services/piano_synth.dart';
 import 'package:pitch_coach/services/pitch_detector.dart';
 import 'package:pitch_coach/views/widgets/piano_keyboard.dart';

@@ -11,7 +11,7 @@ import 'widgets/note_display.dart';
 import 'widgets/piano_keyboard.dart';
 import 'widgets/pitch_graph.dart';
 
-/// '학교종' 곡 연습: 피아노로 멜로디 듣기 → 녹음 → 종료 시 목표 멜로디와 비교해 채점.
+/// 곡 연습: 피아노로 멜로디 듣기 → 녹음 → 종료 시 목표 멜로디와 비교해 채점.
 class SongView extends StatefulWidget {
   const SongView({super.key, required this.song});
 
@@ -33,7 +33,8 @@ class _SongViewState extends State<SongView> {
   /// 피아노로 재생 중인 음표 인덱스.
   int? _playingIndex;
   bool _melodyPlaying = false;
-  int _pianoLow = 48; // C3
+  /// 곡의 가장 낮은 음이 들어가는 옥타브부터 보여준다.
+  late int _pianoLow = (widget.song.lowest.midi ~/ 12) * 12;
 
   @override
   void initState() {
@@ -155,15 +156,17 @@ class _SongViewState extends State<SongView> {
                     Card(
                       color: theme.colorScheme.secondaryContainer,
                       margin: EdgeInsets.zero,
-                      child: const Padding(
-                        padding: EdgeInsets.all(12),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
                         child: Row(
                           children: [
-                            Icon(Icons.lightbulb_outline_rounded),
-                            SizedBox(width: 12),
+                            const Icon(Icons.lightbulb_outline_rounded),
+                            const SizedBox(width: 12),
                             Expanded(
-                              child: Text('먼저 [멜로디 듣기]로 피아노 소리를 들어 보세요. 가사를 누르면 그 음만 들려줘요. '
-                                  '녹음을 시작하면 첫 음(솔)이 울린 뒤 부르면 돼요.'),
+                              child: Text(
+                                '${song.description.isEmpty ? '' : '${song.description}\n'}'
+                                '[멜로디 듣기]로 먼저 들어 보세요. 녹음을 시작하면 첫 음(${song.notes.first.solfege})이 울린 뒤 부르면 돼요.',
+                              ),
                             ),
                           ],
                         ),
@@ -237,7 +240,8 @@ class _SongViewState extends State<SongView> {
 }
 
 /// 가사 + 계이름 악보. 진행 중인 음표를 강조하고, 누르면 그 음을 들려준다.
-class _SheetView extends StatelessWidget {
+/// 긴 곡은 스크롤되며, 진행 중인 소절로 자동으로 따라간다.
+class _SheetView extends StatefulWidget {
   const _SheetView({required this.song, required this.currentIndex, required this.doneCount, this.onTap});
 
   final Song song;
@@ -246,38 +250,62 @@ class _SheetView extends StatelessWidget {
   final ValueChanged<int>? onTap;
 
   @override
-  Widget build(BuildContext context) {
-    final phrases = <List<int>>[];
-    var start = 0;
-    for (final b in [...song.phraseBreaks, song.notes.length]) {
-      phrases.add([for (var i = start; i < b; i++) i]);
-      start = b;
+  State<_SheetView> createState() => _SheetViewState();
+}
+
+class _SheetViewState extends State<_SheetView> {
+  late final List<List<int>> _phrases = widget.song.phrases;
+  late final List<GlobalKey> _keys = [for (final _ in _phrases) GlobalKey()];
+
+  int _phraseOf(int index) => _phrases.indexWhere((p) => p.contains(index));
+
+  @override
+  void didUpdateWidget(_SheetView old) {
+    super.didUpdateWidget(old);
+    final phrase = _phraseOf(widget.currentIndex);
+    if (phrase >= 0 && phrase != _phraseOf(old.currentIndex)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final ctx = _keys[phrase].currentContext;
+        if (ctx != null && ctx.mounted) {
+          Scrollable.ensureVisible(ctx, duration: const Duration(milliseconds: 250), alignment: 0.3);
+        }
+      });
     }
-    return Column(
-      children: [
-        for (final phrase in phrases)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 3),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                for (final i in phrase)
-                  Flexible(
-                    child: GestureDetector(
-                      onTap: onTap == null ? null : () => onTap!(i),
-                      child: _NoteChip(song: song, index: i, state: _stateOf(i)),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-      ],
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 170),
+      child: SingleChildScrollView(
+        child: Column(
+          children: [
+            for (var p = 0; p < _phrases.length; p++)
+              Padding(
+                key: _keys[p],
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 4,
+                  runSpacing: 4,
+                  children: [
+                    for (final i in _phrases[p])
+                      GestureDetector(
+                        onTap: widget.onTap == null ? null : () => widget.onTap!(i),
+                        child: _NoteChip(song: widget.song, index: i, state: _stateOf(i)),
+                      ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 
   _ChipState _stateOf(int i) {
-    if (i == currentIndex) return _ChipState.current;
-    if (i < doneCount) return _ChipState.done;
+    if (i == widget.currentIndex) return _ChipState.current;
+    if (i < widget.doneCount) return _ChipState.done;
     return _ChipState.upcoming;
   }
 }
@@ -303,9 +331,8 @@ class _NoteChip extends StatelessWidget {
     };
     return AnimatedContainer(
       duration: const Duration(milliseconds: 120),
-      margin: const EdgeInsets.symmetric(horizontal: 2),
+      width: 40,
       padding: const EdgeInsets.symmetric(vertical: 5),
-      constraints: const BoxConstraints(maxWidth: 52),
       decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(10)),
       child: Column(
         children: [

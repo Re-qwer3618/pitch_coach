@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../models/song.dart';
+import '../data/built_in_songs.dart';
 import '../services/permission_service.dart';
 import 'practice_view.dart';
-import 'song_view.dart';
+import 'song_list_view.dart';
 
 class HomeView extends StatefulWidget {
   const HomeView({super.key});
@@ -86,11 +86,11 @@ class _HomeViewState extends State<HomeView> with WidgetsBindingObserver {
             ),
             const SizedBox(height: 12),
             _ModeCard(
-              icon: Icons.notifications_active_rounded,
+              icon: Icons.library_music_rounded,
               color: scheme.tertiary,
-              title: "'학교종' 부르기",
-              description: '솔솔라라 솔솔미 / 솔솔미미레\n피아노로 멜로디를 듣고 부르면 일치율 점수와 피드백을 알려줘요.',
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => SongView(song: schoolBellSong))),
+              title: '노래 연습',
+              description: '음계·동요·명곡 ${builtInSongs.length}곡 + 내가 추가한 노래\n피아노로 듣고 부르면 일치율 점수와 피드백을 알려줘요.',
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SongListView())),
             ),
             const SizedBox(height: 24),
             Text('Tip. 조용한 곳에서 휴대폰을 입에서 20~30cm 떨어뜨리고 불러 주세요.',

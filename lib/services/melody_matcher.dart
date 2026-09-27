@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import '../models/match_result.dart';
+import '../models/note.dart';
 import '../models/pitch_reading.dart';
 import '../models/song.dart';
 
@@ -176,7 +177,7 @@ class MelodyMatcher {
       octaveShift: best.shift,
       detectedNoteCount: sung.length,
       headline: _headline(score, sung.length),
-      tips: _tips(matches, best.shift, score, transposedScore, bestTransposed.shift),
+      tips: _tips(matches, best.shift, score, transposedScore, bestTransposed.shift, song.notes.first),
     );
   }
 
@@ -270,6 +271,7 @@ class MelodyMatcher {
     double score,
     double transposedScore,
     int transposeShift,
+    Note firstNote,
   ) {
     final tips = <String>[];
 
@@ -285,7 +287,8 @@ class MelodyMatcher {
       if (semis > 6) semis -= 12;
       final direction = semis > 0 ? '낮게' : '높게';
       tips.add('멜로디 흐름은 잘 맞았지만 전체 음높이가 ${semis.abs()}반음 $direction 시작됐어요. '
-          '키를 맞추면 ${transposedScore.round()}점이에요. 첫 음 솔(G4)을 먼저 잡고 시작해 보세요.');
+          '키를 맞추면 ${transposedScore.round()}점이에요. '
+          '첫 음 ${firstNote.solfege}(${firstNote.name})을 먼저 듣고 시작해 보세요.');
     }
 
     final sung = matches.where((m) => m.centsError != null && m.centsError!.abs() <= 150).toList();

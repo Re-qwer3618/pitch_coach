@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitch_coach/models/match_result.dart';
 import 'package:pitch_coach/models/note.dart';
 import 'package:pitch_coach/models/pitch_reading.dart';
-import 'package:pitch_coach/models/song.dart';
+import 'package:pitch_coach/data/built_in_songs.dart';
 import 'package:pitch_coach/services/melody_matcher.dart';
 
 const hopMs = 23;
