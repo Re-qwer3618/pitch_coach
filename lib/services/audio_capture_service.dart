@@ -27,6 +27,8 @@ class AudioCaptureService {
       autoGain: false,
       echoCancel: false,
       noiseSuppress: false,
+      // 앱의 피아노 소리가 재생돼도 녹음이 멈추지 않게 한다.
+      audioInterruption: AudioInterruptionMode.none,
     ));
     _subscription = stream.listen((chunk) => onSamples(_decode(chunk)));
   }

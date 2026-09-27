@@ -26,6 +26,7 @@ class LivePitchController extends ChangeNotifier {
   double _center;
   bool _running = false;
   bool _disposed = false;
+  DateTime _suppressUntil = DateTime.fromMillisecondsSinceEpoch(0);
 
   bool get isRunning => _running;
   PitchReading? get current => _current;
@@ -58,8 +59,24 @@ class LivePitchController extends ChangeNotifier {
     _notify();
   }
 
+  /// 피아노 소리가 스피커에서 나는 동안 마이크 입력을 무시한다.
+  /// (스피커 소리를 사용자 목소리로 오인하지 않도록)
+  void suppressInput(Duration duration) {
+    final until = DateTime.now().add(duration);
+    if (until.isAfter(_suppressUntil)) _suppressUntil = until;
+  }
+
+  bool get isSuppressed => DateTime.now().isBefore(_suppressUntil);
+
   void _onReading(PitchReading reading) {
     if (!_running) return;
+    if (isSuppressed) {
+      _current = null;
+      history.add(null);
+      if (history.length > maxHistory) history.removeAt(0);
+      _notify();
+      return;
+    }
     _current = reading;
     recording.add(reading);
     history.add(reading.midi);

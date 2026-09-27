@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../models/match_result.dart';
+import '../models/note.dart';
 import '../models/song.dart';
+import '../services/piano_service.dart';
 
 /// 곡 채점 결과: 일치율, 총평, 팁, 음표별 비교.
 class ResultView extends StatelessWidget {
@@ -90,6 +92,8 @@ class ResultView extends StatelessWidget {
               ),
             const SizedBox(height: 12),
             Text('음표별 비교', style: theme.textTheme.titleMedium!.copyWith(fontWeight: FontWeight.bold)),
+            Text('🎹 음표를 누르면 정답 음 → 내가 부른 음 순서로 피아노 소리를 들려줘요.',
+                style: theme.textTheme.bodySmall!.copyWith(color: scheme.onSurfaceVariant)),
             const SizedBox(height: 8),
             _Legend(),
             const SizedBox(height: 8),
@@ -181,6 +185,18 @@ class _NoteResultTile extends StatelessWidget {
     final color = gradeColor(match.grade, theme.colorScheme);
     final cents = match.centsError?.round();
     final sung = match.sungNote;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => PianoService.instance.playSequence([
+        (midi: match.target.midi.toDouble(), duration: const Duration(milliseconds: 800)),
+        // 부른 음은 센트 오차까지 그대로 재현한다.
+        if (match.sungMidi != null) (midi: match.sungMidi!, duration: const Duration(milliseconds: 800)),
+      ]),
+      child: _tile(theme, color, cents, sung),
+    );
+  }
+
+  Widget _tile(ThemeData theme, Color color, int? cents, Note? sung) {
     return Container(
       padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
