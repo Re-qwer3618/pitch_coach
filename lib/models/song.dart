@@ -27,6 +27,7 @@ class Song {
     required this.isCustom,
     required this.notation,
     required this.lyricsText,
+    required this.youtubeId,
   });
 
   /// 계이름 악보와 가사로 곡을 만든다. 악보 오류 시 [FormatException].
@@ -39,6 +40,7 @@ class Song {
     String category = customCategory,
     String description = '',
     bool isCustom = false,
+    String? youtubeId,
   }) {
     final parsed = Notation.parse(notation);
     if (parsed.midis.isEmpty) throw const FormatException('음표를 하나 이상 입력해 주세요');
@@ -58,6 +60,7 @@ class Song {
       isCustom: isCustom,
       notation: notation,
       lyricsText: lyrics,
+      youtubeId: youtubeId,
     );
   }
 
@@ -68,6 +71,7 @@ class Song {
         lyrics: json['lyrics'] as String? ?? '',
         tempoBpm: (json['tempo'] as num?)?.toDouble() ?? 100,
         isCustom: true,
+        youtubeId: json['youtube'] as String?,
       );
 
   static const String customCategory = '내 노래';
@@ -93,12 +97,16 @@ class Song {
   final String notation;
   final String lyricsText;
 
+  /// 원곡 참고 영상(유튜브 영상 ID). 없으면 null.
+  final String? youtubeId;
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'title': title,
         'notation': notation,
         'lyrics': lyricsText,
         'tempo': tempoBpm,
+        if (youtubeId != null) 'youtube': youtubeId,
       };
 
   Set<int> get pitchClasses => notes.map((n) => n.pitchClass).toSet();

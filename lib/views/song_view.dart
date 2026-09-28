@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../controllers/live_pitch_controller.dart';
 import '../models/song.dart';
+import '../models/youtube_link.dart';
 import '../services/melody_matcher.dart';
 import '../services/permission_service.dart';
 import '../services/piano_service.dart';
+import '../services/youtube_launcher.dart';
 import 'permission_prompt.dart';
 import 'result_view.dart';
 import 'widgets/note_display.dart';
@@ -92,6 +94,19 @@ class _SongViewState extends State<SongView> {
     if (mounted && !_melodyPlaying) setState(() => _playingIndex = null);
   }
 
+  /// 원곡 영상을 유튜브 앱으로 연다. 녹음 중에는 원곡 소리가 마이크에 섞이므로 막는다.
+  Future<void> _openOriginal() async {
+    if (_controller.isRunning) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('녹음 중에는 원곡을 열 수 없어요. 녹음을 끝낸 뒤 들어 보세요.')),
+      );
+      return;
+    }
+    if (_melodyPlaying) await _playMelody(); // 재생 중이면 멈춘다
+    if (!mounted) return;
+    await openYoutube(context, YoutubeLink.watchUri(widget.song.youtubeId!));
+  }
+
   Future<void> _start() async {
     if (_melodyPlaying) await _playMelody(); // 재생 중이면 멈춘다
     _sungCount = 0;
@@ -126,7 +141,17 @@ class _SongViewState extends State<SongView> {
     final theme = Theme.of(context);
     final song = widget.song;
     return Scaffold(
-      appBar: AppBar(title: Text("'${song.title}' 부르기")),
+      appBar: AppBar(
+        title: Text("'${song.title}' 부르기"),
+        actions: [
+          if (song.youtubeId != null)
+            TextButton.icon(
+              onPressed: _openOriginal,
+              icon: const Icon(Icons.smart_display_rounded),
+              label: const Text('원곡'),
+            ),
+        ],
+      ),
       body: SafeArea(
         child: ListenableBuilder(
           listenable: _controller,

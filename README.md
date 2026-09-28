@@ -28,22 +28,38 @@ ML 서버 없이 기기 안에서 경량 DSP(YIN 알고리즘)로만 동작합�
 
 가사는 한 글자에 한 음씩 붙고, 비워 두면 계이름으로 부릅니다.
 
+**MIDI 가져오기** — 노래 추가 화면의 [MIDI 가져오기]로 `.mid`/`.midi`/`.kar` 파일을 고르면 계이름 악보로 바꿔 채웁니다
+(`lib/services/midi_importer.dart`, 순수 Dart 파서).
+- 트랙·채널별로 멜로디 후보를 만들어 고르게 합니다. 드럼(10번 채널)은 빼고, 화음은 가장 높은 음만 남기며,
+  트랙 이름이 멜로디/보컬이거나 화음이 적은 파트를 먼저 추천합니다.
+- 박자는 반 박 단위로 맞춥니다. 계이름 악보에 쉼표가 없어서, 짧은 쉼은 앞 음에 붙이고 한 박 이상 쉬면 소절을 나눕니다.
+- 가운데 음이 F4 근처가 되도록 옥타브를 옮깁니다(채점은 원래 옥타브 자동 보정).
+- 가사(lyric/.kar 텍스트 이벤트)는 UTF-8이고 음절 수가 음표 수와 딱 맞을 때만 가져옵니다.
+
+**원곡 영상** — 노래에 유튜브 링크를 붙여 두면 연습 화면의 [원곡] 버튼이 유튜브 앱(없으면 브라우저)에서 엽니다.
+앱 안에서 재생하지 않으므로 인터넷 권한 없이 동작합니다. 음원을 내려받거나 분석하지 않습니다(유튜브 약관).
+
 ## 구조
 ```
 lib/
   main.dart
-  models/       note.dart, pitch_reading.dart, song.dart, match_result.dart
+  models/       note.dart, pitch_reading.dart, song.dart, notation.dart, match_result.dart, youtube_link.dart
   services/     audio_capture_service.dart  마이크 PCM 스트림
                 pitch_detector.dart         YIN F0 검출
                 pitch_service.dart          윈도잉·스무딩 → PitchReading 스트림
                 melody_matcher.dart         분할·정렬·채점·피드백
                 permission_service.dart
+                midi_importer.dart          MIDI 파일 → 멜로디 후보 → 계이름 악보
+                youtube_launcher.dart       원곡 영상을 유튜브 앱으로 열기
   controllers/  live_pitch_controller.dart  화면용 실시간 상태
   views/        home_view, practice_view, song_view, result_view, widgets/
-test/           pitch_detector_test, melody_matcher_test, widget_test
+test/           pitch_detector_test, melody_matcher_test, song_test, midi_importer_test, youtube_link_test, widget_test
 ```
 
 ## 갤럭시에 설치하기
+**가장 쉬운 방법: GitHub에서 받기.** 푸시하면 GitHub Actions가 서명된 APK를 만들어 [Releases](https://github.com/Re-qwer3618/pitch_coach/releases/latest)에 올립니다.
+폰에서 열어 APK를 받아 설치하면 됩니다(처음 설정: [docs/ci-build.md](docs/ci-build.md)). PC에서 직접 빌드했다면 아래 순서를 따르세요.
+
 1. `build/app/outputs/flutter-apk/app-release.apk` 파일을 폰으로 옮깁니다 (USB, 카카오톡 나에게 보내기, 구글 드라이브 등).
 2. 폰의 **내 파일** 앱에서 APK를 누릅니다.
 3. "출처를 알 수 없는 앱" 경고가 나오면 **설정 → 이 출처 허용**을 켜고 설치합니다.

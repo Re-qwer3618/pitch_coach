@@ -1,15 +1,20 @@
 import 'dart:async';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../models/notation.dart';
 import '../models/note.dart';
 import '../models/song.dart';
+import '../models/youtube_link.dart';
+import '../services/midi_importer.dart';
 import '../services/piano_service.dart';
 import '../services/song_repository.dart';
+import '../services/youtube_launcher.dart';
 import 'widgets/piano_keyboard.dart';
 
-/// 내 노래 추가/수정. 계이름 악보를 직접 입력하거나 피아노 건반을 눌러 입력한다.
+/// 내 노래 추가/수정. 계이름 악보를 직접 입력하거나, 피아노 건반을 눌러 입력하거나,
+/// MIDI 파일에서 가져온다. 원곡 유튜브 링크를 붙여 둘 수 있다.
 class SongEditorView extends StatefulWidget {
   const SongEditorView({super.key, this.song});
 
@@ -25,6 +30,9 @@ class _SongEditorViewState extends State<SongEditorView> {
   late final _title = TextEditingController(text: widget.song?.title ?? '');
   late final _notation = TextEditingController(text: widget.song?.notation ?? '');
   late final _lyrics = TextEditingController(text: widget.song?.lyricsText ?? '');
+  late final _youtube = TextEditingController(
+    text: widget.song?.youtubeId == null ? '' : YoutubeLink.watchUri(widget.song!.youtubeId!).toString(),
+  );
   late double _tempo = widget.song?.tempoBpm ?? 100;
 
   Song? _preview;
@@ -43,6 +51,7 @@ class _SongEditorViewState extends State<SongEditorView> {
     _notation.addListener(_reparse);
     _lyrics.addListener(_reparse);
     _title.addListener(() => setState(() {}));
+    _youtube.addListener(() => setState(() {}));
     _reparse();
   }
 
@@ -53,6 +62,7 @@ class _SongEditorViewState extends State<SongEditorView> {
     _title.dispose();
     _notation.dispose();
     _lyrics.dispose();
+    _youtube.dispose();
     super.dispose();
   }
 
@@ -80,7 +90,98 @@ class _SongEditorViewState extends State<SongEditorView> {
         lyrics: _lyrics.text,
         tempoBpm: _tempo,
         isCustom: true,
+        youtubeId: YoutubeLink.videoId(_youtube.text),
       );
+
+  /// 링크를 적었는데 유튜브 링크가 아니면 true.
+  bool get _youtubeInvalid => _youtube.text.trim().isNotEmpty && YoutubeLink.videoId(_youtube.text) == null;
+
+  void _snack(String message) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+
+  // ───── MIDI 가져오기 ─────
+
+  Future<void> _importMidi() async {
+    final PlatformFile? file;
+    try {
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['mid', 'midi', 'kar'],
+        withData: true,
+      );
+      file = picked?.files.single;
+    } catch (_) {
+      if (mounted) _snack('파일을 열지 못했어요');
+      return;
+    }
+    if (file == null || !mounted) return; // 고르지 않고 닫음
+    final bytes = file.bytes;
+    if (bytes == null) {
+      _snack('파일을 읽지 못했어요');
+      return;
+    }
+
+    final MidiImport imported;
+    try {
+      imported = MidiImporter.parse(bytes);
+    } on FormatException catch (e) {
+      _snack(e.message);
+      return;
+    }
+    final melody = await _chooseMelody(imported.melodies);
+    if (melody == null || !mounted) return;
+
+    await _piano.stopSequence();
+    if (_title.text.trim().isEmpty) {
+      _title.text = file.name.replaceFirst(RegExp(r'\.(mid|midi|kar)$', caseSensitive: false), '').replaceAll('_', ' ');
+    }
+    // 빠르기 슬라이더(50~160, 5단위)에 맞춘다.
+    _tempo = ((imported.tempoBpm / 5).round() * 5).clamp(50, 160).toDouble();
+    if (melody.lyrics.isNotEmpty) _lyrics.text = melody.lyrics;
+    _setNotation(melody.notation);
+    final shifted = melody.octaveShift == 0
+        ? ''
+        : ' (부르기 편하게 ${melody.octaveShift.abs()}옥타브 ${melody.octaveShift > 0 ? '올렸어요' : '내렸어요'})';
+    _snack('${melody.noteCount}개 음을 가져왔어요$shifted');
+  }
+
+  /// 멜로디 후보를 보여주고 하나를 고르게 한다. 첫 번째가 추천.
+  Future<MidiMelody?> _chooseMelody(List<MidiMelody> melodies) {
+    final replacing = _notation.text.trim().isNotEmpty;
+    return showDialog<MidiMelody>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('어느 파트를 가져올까요?'),
+        children: [
+          if (replacing)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+              child: Text('지금 입력된 악보는 바뀌어요.', style: Theme.of(context).textTheme.bodySmall),
+            ),
+          for (var i = 0; i < melodies.length; i++)
+            ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+              leading: Icon(i == 0 ? Icons.star_rounded : Icons.music_note_rounded),
+              title: Text(melodies[i].name, maxLines: 1, overflow: TextOverflow.ellipsis),
+              subtitle: Text('${i == 0 ? '추천 · ' : ''}${melodies[i].noteCount}음 · ${melodies[i].rangeLabel}'
+                  '${melodies[i].lyrics.isEmpty ? '' : ' · 가사 있음'}'),
+              onTap: () => Navigator.pop(context, melodies[i]),
+            ),
+        ],
+      ),
+    );
+  }
+
+  // ───── 유튜브 ─────
+
+  void _searchYoutube() {
+    final title = _title.text.trim();
+    if (title.isEmpty) {
+      _snack('노래 제목을 먼저 입력해 주세요');
+      return;
+    }
+    openYoutube(context, YoutubeLink.searchUri(title));
+  }
 
   // ───── 피아노 입력 ─────
 
@@ -155,6 +256,7 @@ class _SongEditorViewState extends State<SongEditorView> {
     if (_title.text.trim().isEmpty) return '노래 제목을 입력해 주세요';
     if (_preview == null) return _error ?? '음표를 입력해 주세요';
     if (_preview!.notes.length < 2) return '음표를 2개 이상 입력해 주세요';
+    if (_youtubeInvalid) return '유튜브 링크를 확인해 주세요';
     return null;
   }
 
@@ -230,6 +332,12 @@ class _SongEditorViewState extends State<SongEditorView> {
             children: [
               Text('계이름 악보', style: theme.textTheme.titleMedium!.copyWith(fontWeight: FontWeight.bold)),
               IconButton(onPressed: _showHelp, icon: const Icon(Icons.help_outline_rounded), tooltip: '입력 방법'),
+              const Spacer(),
+              TextButton.icon(
+                onPressed: _importMidi,
+                icon: const Icon(Icons.file_open_rounded),
+                label: const Text('MIDI 가져오기'),
+              ),
             ],
           ),
           TextField(
@@ -285,6 +393,23 @@ class _SongEditorViewState extends State<SongEditorView> {
               border: const OutlineInputBorder(),
               counterText: syllableCount == 0 ? null : '가사 $syllableCount글자 / 음표 $noteCount개',
               counterStyle: TextStyle(color: lyricsMismatch ? scheme.error : null),
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _youtube,
+            keyboardType: TextInputType.url,
+            decoration: InputDecoration(
+              labelText: '원곡 영상 (선택)',
+              hintText: '유튜브 링크를 붙여 넣으세요',
+              helperText: '연습 화면의 [원곡] 버튼으로 유튜브에서 열려요',
+              errorText: _youtubeInvalid ? '유튜브 링크가 아니에요' : null,
+              border: const OutlineInputBorder(),
+              suffixIcon: IconButton(
+                onPressed: _searchYoutube,
+                icon: const Icon(Icons.search_rounded),
+                tooltip: '유튜브에서 제목으로 찾기',
+              ),
             ),
           ),
           const SizedBox(height: 16),
