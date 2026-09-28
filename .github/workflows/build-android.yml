@@ -1,0 +1,120 @@
+# 푸시할 때마다 테스트 → 업로드 키로 서명한 APK/AAB 빌드 → GitHub Release에 APK 첨부.
+# 폰에서 https://github.com/Re-qwer3618/pitch_coach/releases/latest 를 열어 APK를 받아 설치한다.
+#
+# 서명 키는 저장소 Secrets에만 둔다 (어느 PC에서 작업하든 같은 키로 서명 → 폰에서 덮어쓰기 업데이트 가능).
+#   ANDROID_KEYSTORE_BASE64   업로드 키(.jks)를 base64로 인코딩한 값
+#   ANDROID_KEYSTORE_PASSWORD 키 저장소 비밀번호
+#   ANDROID_KEY_ALIAS         키 별칭 (tools/create_upload_key.ps1 기본값: upload)
+#   ANDROID_KEY_PASSWORD      키 비밀번호
+# 등록 방법: tools/upload_signing_secrets.ps1 (docs/ci-build.md 참고)
+name: Android 빌드
+
+on:
+  push:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'store/**'
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write # Release 만들기
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 서명 키 확인
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          # 키가 없으면 debug 키로 서명돼 폰에 있는 앱을 덮어쓸 수 없으므로 아예 멈춘다.
+          missing=""
+          [ -z "$KEYSTORE_BASE64" ] && missing="$missing ANDROID_KEYSTORE_BASE64"
+          [ -z "$KEYSTORE_PASSWORD" ] && missing="$missing ANDROID_KEYSTORE_PASSWORD"
+          [ -z "$KEY_ALIAS" ] && missing="$missing ANDROID_KEY_ALIAS"
+          [ -z "$KEY_PASSWORD" ] && missing="$missing ANDROID_KEY_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error::서명 키 Secrets가 없어요:$missing — docs/ci-build.md 를 보고 등록하세요."
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/upload-keystore.jks"
+          cat > android/key.properties <<EOF
+          storeFile=$RUNNER_TEMP/upload-keystore.jks
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # README 빌드 메모: Flutter 3.47 기준 (compileSdk 37 문제로 permission_handler 12.0.1 고정)
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.x
+          cache: true
+
+      - run: flutter pub get
+
+      - name: 테스트
+        run: flutter test
+
+      - name: APK · AAB 빌드
+        run: |
+          flutter build apk --release
+          flutter build appbundle --release
+
+      - name: 서명 확인
+        run: |
+          # minSdk 24라 APK에는 v1(jar) 서명이 없어 keytool로는 못 읽는다 → apksigner
+          apksigner="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)/apksigner"
+          signer=$("$apksigner" verify --print-certs build/app/outputs/flutter-apk/app-release.apk)
+          echo "$signer" | grep -E 'DN:|SHA-256'
+          if echo "$signer" | grep -q 'CN=Android Debug'; then
+            echo "::error::debug 키로 서명됐어요. Secrets를 확인하세요."
+            exit 1
+          fi
+
+      - name: 파일 이름 정리
+        id: files
+        run: |
+          version=$(grep -E '^version:' pubspec.yaml | sed -E 's/version:[[:space:]]*//')
+          name="pitch_coach-${version%%+*}-build${{ github.run_number }}"
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk "dist/$name.apk"
+          cp build/app/outputs/bundle/release/app-release.aab "dist/$name.aab"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-build-${{ github.run_number }}
+          path: dist/
+          retention-days: 30
+
+      - name: Release에 APK 올리기
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          name: '빌드 #${{ github.run_number }} (${{ github.ref_name }})'
+          make_latest: true
+          body: |
+            브랜치 `${{ github.ref_name }}` · 커밋 ${{ github.sha }} · 버전 ${{ steps.files.outputs.version }}
+
+            **폰에 설치:** 아래 Assets에서 `.apk`를 눌러 받은 뒤 설치하세요. 같은 키로 서명돼 기존 앱 위에 업데이트돼요.
+            Play 스토어 제출용 `.aab`는 Actions 실행 페이지의 Artifacts(30일 보관)에 있어요.
+          files: dist/*.apk
