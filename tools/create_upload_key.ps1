@@ -43,7 +43,10 @@ do {
 } while ($pw.Length -lt 6 -or $pw -ne $pw2)
 
 New-Item -ItemType Directory -Force (Split-Path $KeystorePath) | Out-Null
-$dname = "CN=$($name -replace '[,=]', ' '), C=KR"
+# 인증서 이름(X.500)에서 특별한 뜻이 있는 문자(\ , = + " < > ; #)는 keytool이 거부하므로 공백으로 바꾼다.
+$cn = ($name -replace '[\\,=+"<>;#]', ' ').Trim()
+if ([string]::IsNullOrWhiteSpace($cn)) { $cn = 'Developer' }
+$dname = "CN=$cn, C=KR"
 
 & keytool -genkeypair -v -keystore $KeystorePath -storetype PKCS12 -keyalg RSA -keysize 2048 `
     -validity 10000 -alias $Alias -storepass $pw -keypass $pw -dname $dname
